@@ -83,3 +83,10 @@ button:focus-visible {
     background-color: #f9f9f9;
   }
 }
+
+#map {
+  width: 500px;
+  height: 500px;
+  margin: 0 auto;
+  background-color: #ccc; /* Optional: This is for visibility of the placeholder */
+}
