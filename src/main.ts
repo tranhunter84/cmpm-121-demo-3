@@ -18,6 +18,14 @@ const header = document.createElement("h1");
 const button = document.createElement("button");
 const mapContainer = document.createElement("div");
 
+const cacheCoins: { [key: string]: number } = {};
+let playerCoins = 0;
+
+interface ExtendedGlobalThis {
+  collectCoins: (cacheID: string) => void;
+  depositCoins: (cacheID: string) => void;
+}
+
 // HELPER FUNCTIONS
 function initializeMap(mapContainer: HTMLElement) {
   const map = leaflet.map(mapContainer, {
@@ -55,20 +63,69 @@ function generateCaches(map: leaflet.Map) {
       if (distance <= gridLength && Math.random() < cacheDensity) {
         const cacheLat = lat + dx * cellLength;
         const cacheLng = lng + dy * cellLength;
+        const cacheID = `cache-${cacheLabel}`; // Updated to use backticks for interpolation
+
+        // Deterministically generates offering of coins for each cache
+        generateCacheCoin(cacheID, distance);
+
+        const popupText = `
+          <div>
+            <strong>Cache #${cacheLabel}</strong><br>
+            Coins available: <span id="${cacheID}-coins">${
+          cacheCoins[cacheID]
+        }</span><br>
+            <button onclick="globalThis.collectCoins('${cacheID}')">Collect</button>
+            <button onclick="globalThis.depositCoins('${cacheID}')">Deposit</button>
+          </div>
+        `;
 
         leaflet
           .marker([cacheLat, cacheLng])
           .addTo(map)
-          .bindPopup(
-            `Cache #${cacheLabel}<br>Distance from player: ${
-              distance.toFixed(2)
-            } cell steps away`,
-          );
+          .bindPopup(popupText);
 
         cacheLabel += 1;
       }
     }
   }
+}
+
+(globalThis as unknown as ExtendedGlobalThis).collectCoins = function (
+  cacheID: string,
+) {
+  const coinsAvailable = cacheCoins[cacheID];
+  if (coinsAvailable > 0) {
+    playerCoins += coinsAvailable;
+    cacheCoins[cacheID] = 0;
+    updatePopupCoins(cacheID);
+  } else {
+    alert("This cache has no coins remaining to collect.");
+  }
+};
+
+(globalThis as unknown as ExtendedGlobalThis).depositCoins = function (
+  cacheID: string,
+) {
+  const coinsToDeposit = 5;
+  if (playerCoins >= coinsToDeposit) {
+    playerCoins -= coinsToDeposit;
+    cacheCoins[cacheID] += coinsToDeposit;
+    updatePopupCoins(cacheID);
+  } else {
+    alert("You do not own any coins to deposit.");
+  }
+};
+
+function updatePopupCoins(cacheID: string) {
+  const coinsDisplay = document.getElementById(`${cacheID}-coins`);
+  if (coinsDisplay) {
+    coinsDisplay.textContent = cacheCoins[cacheID].toString();
+  }
+}
+
+function generateCacheCoin(cacheName: string, distance: number) {
+  const coins = 10 * distance;
+  cacheCoins[cacheName] = coins;
 }
 
 // App Title & Header
