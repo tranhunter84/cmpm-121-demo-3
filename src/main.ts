@@ -172,7 +172,7 @@ function updatePlayerInventory() {
 function updateCachePopup(cacheID: string) {
   const _markers = leaflet
     .map(mapContainer)
-    .eachLayer((layer) => {
+    .eachLayer((layer: leaflet.Layer) => {
       if (layer instanceof leaflet.Marker && layer._popup) {
         if (layer._popup.getContent().includes(cacheID)) {
           layer._popup.setContent(
