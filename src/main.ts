@@ -1,3 +1,5 @@
+// deno task dev
+
 import leaflet from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "./style.css";
@@ -6,11 +8,14 @@ import { Board, Cell } from "./board.ts";
 import luck from "./luck.ts";
 
 // CORE VARIABLES
+let map: leaflet.Map;
+
 const playerLocation: [number, number] = [
   36.98949379578401,
   -122.06277128548504,
 ];
 const cellLength = 0.001;
+const cellStep = 0.0001;
 const gridLength = 8;
 const cacheDensity = 0.1;
 
@@ -29,14 +34,46 @@ const boardTileWidth = 0.001;
 const boardTileVisibility = 8;
 const board = new Board(boardTileWidth, boardTileVisibility);
 
+const moveButtons = document.createElement("div") as HTMLElement;
+
+// INTERFACES
 interface ExtendedGlobalThis {
   collectCoin: (cacheID: string, serial: number) => void;
   depositCoins: (cacheID: string) => void;
 }
 
+interface Memento<T> {
+  toMomento(): T;
+  fromMomento(memento: T): void;
+}
+
+class Geocache implements Memento<string> {
+  i: number;
+  j: number;
+  coins: { i: number; j: number; serial: number }[];
+
+  constructor(
+    i: number,
+    j: number,
+    coins: { i: number; j: number; serial: number }[],
+  ) {
+    this.i = i;
+    this.j = j;
+    this.coins = coins;
+  }
+
+  toMomento(): string {
+    return JSON.stringify(this.coins);
+  }
+
+  fromMomento(memento: string): void {
+    this.coins = JSON.parse(memento);
+  }
+}
+
 // HELPER FUNCTIONS
-function initializeMap(mapContainer: HTMLElement) {
-  const map = leaflet.map(mapContainer, {
+function _initializeMap(mapContainer: HTMLElement) {
+  map = leaflet.map(mapContainer, {
     center: playerLocation,
     zoom: 15,
   });
@@ -62,18 +99,15 @@ function generateCaches(map: leaflet.Map) {
   const [lat, lng] = playerLocation;
   let cacheLabel = 0;
 
-  // Loop through all cells in the grid to deterministically generate caches & coins
   for (let dx = -gridLength; dx <= gridLength; dx++) {
     for (let dy = -gridLength; dy <= gridLength; dy++) {
       const distance = Math.sqrt(dx * dx + dy * dy);
 
-      // Place caches within 8 cell steps
       if (distance <= gridLength && Math.random() < cacheDensity) {
         const cacheLat = lat + dx * cellLength;
         const cacheLng = lng + dy * cellLength;
         const cacheID = `cache-${cacheLabel}`;
 
-        // Get the cell corresponding to the cache location
         const cell = board.getCellForPoint(
           new leaflet.LatLng(cacheLat, cacheLng),
         );
@@ -170,17 +204,15 @@ function updatePlayerInventory() {
 }
 
 function updateCachePopup(cacheID: string) {
-  const _markers = leaflet
-    .map(mapContainer)
-    .eachLayer((layer: leaflet.Layer) => {
-      if (layer instanceof leaflet.Marker && layer._popup) {
-        if (layer._popup.getContent().includes(cacheID)) {
-          layer._popup.setContent(
-            createPopupContent(cacheID, cacheCoins[cacheID]),
-          );
-        }
+  const _markers = map.eachLayer((layer: leaflet.Layer) => {
+    if (layer instanceof leaflet.Marker && layer._popup) {
+      if (layer._popup.getContent().includes(cacheID)) {
+        layer._popup.setContent(
+          createPopupContent(cacheID, cacheCoins[cacheID]),
+        );
       }
-    });
+    }
+  });
 }
 
 function generateCacheCoin(cacheName: string, distance: number, cell: Cell) {
@@ -189,17 +221,63 @@ function generateCacheCoin(cacheName: string, distance: number, cell: Cell) {
     return;
   }
 
-  let cacheCoinCount = Math.floor(luck(cacheName) * distance);
-  cacheCoinCount = Math.max(1, cacheCoinCount);
+  const preservedMemento = localStorage.getItem(cacheName);
+  const cache = new Geocache(cell.i, cell.j, []);
 
-  const coins = Array.from({ length: cacheCoinCount }, (_, serial) => ({
-    i: cell.i,
-    j: cell.j,
-    serial,
-  }));
+  if (preservedMemento) {
+    cache.fromMomento(preservedMemento);
+  } else {
+    let cacheCoinCount = Math.floor(luck(cacheName) * distance);
+    cacheCoinCount = Math.max(1, cacheCoinCount);
 
-  cacheCoins[cacheName] = coins;
+    cache.coins = Array.from({ length: cacheCoinCount }, (_, serial) => ({
+      i: cell.i,
+      j: cell.j,
+      serial,
+    }));
+  }
+
+  cacheCoins[cacheName] = cache.coins;
+  localStorage.setItem(cacheName, cache.toMomento());
 }
+
+function movePlayer(direction: string) {
+  if (direction === "up") playerLocation[0] += cellStep;
+  else if (direction === "down") playerLocation[0] -= cellStep;
+  else if (direction === "left") playerLocation[1] -= cellStep;
+  else if (direction === "right") playerLocation[1] += cellStep;
+
+  map.setView(playerLocation);
+  refreshCaches();
+}
+
+function refreshCaches() {
+  map.eachLayer((layer: leaflet.Layer) => {
+    if (layer instanceof leaflet.Marker && layer.getPopup()) {
+      const cacheID = layer.getPopup()!.getContent().match(/Cache #(\d+)/)?.[1];
+      if (cacheID && cacheCoins[cacheID]) {
+        layer.getPopup()!.setContent(
+          createPopupContent(cacheID, cacheCoins[cacheID]),
+        );
+      }
+    }
+  });
+}
+
+// MAIN PROGRAM
+moveButtons.id = "movement-controls";
+moveButtons.innerHTML = `
+  <button id="up">⬆️</button>
+  <button id="down">⬇️</button>
+  <button id="left">⬅️</button>
+  <button id="right">➡️</button>
+`;
+app.append(moveButtons);
+
+document.getElementById("up")!.onclick = () => movePlayer("up");
+document.getElementById("down")!.onclick = () => movePlayer("down");
+document.getElementById("left")!.onclick = () => movePlayer("left");
+document.getElementById("right")!.onclick = () => movePlayer("right");
 
 // App Title & Header
 document.title = appTitle;
@@ -208,16 +286,6 @@ header.innerHTML = appTitle;
 // Map Container (Initializes Empty Square 500x500 pixels)
 mapContainer.style.width = "500px";
 mapContainer.style.height = "500px";
-mapContainer.style.backgroundColor = "#ccc";
-mapContainer.style.margin = "0 auto";
-
-// Player Coins Inventory
-const inventoryContainer = document.createElement("div");
-inventoryContainer.id = "player-coins";
-updatePlayerInventory(); // Populate the inventory right away
-
-// Putting it all together
-app.append(header);
-app.append(mapContainer);
-app.append(inventoryContainer);
-initializeMap(mapContainer);
+mapContainer.style.backgroundColor;
+app.appendChild(mapContainer);
+_initializeMap(mapContainer);
