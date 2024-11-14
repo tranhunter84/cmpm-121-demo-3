@@ -9,6 +9,7 @@ import luck from "./luck.ts";
 
 // CORE VARIABLES
 let map: leaflet.Map;
+let geolocationID: number | null = null;
 
 const playerLocation: [number, number] = [
   36.98949379578401,
@@ -34,7 +35,9 @@ const boardTileWidth = 0.001;
 const boardTileVisibility = 8;
 const board = new Board(boardTileWidth, boardTileVisibility);
 
+// Buttons
 const moveButtons = document.createElement("div") as HTMLElement;
+const updatePositionButton = document.createElement("button");
 
 // INTERFACES
 interface ExtendedGlobalThis {
@@ -264,6 +267,34 @@ function refreshCaches() {
   });
 }
 
+function enableGeolocation() {
+  if (geolocationID === null) {
+    geolocationID = navigator.geolocation.watchPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+        movePlayerToLocation(latitude, longitude);
+      },
+      (error) => {
+        console.error("ERROR with position updating using geolocation:", error);
+        alert("Can't access geolocation.");
+      },
+      { enableHighAccuracy: true },
+    );
+    alert("Geolocation enabled.");
+  } else {
+    navigator.geolocation.clearWatch(geolocationID);
+    geolocationID = null;
+    alert("Geolocation disabled.");
+  }
+}
+
+function movePlayerToLocation(latitude: number, longitude: number) {
+  playerLocation[0] = latitude;
+  playerLocation[1] = longitude;
+  map.setView(playerLocation);
+  refreshCaches();
+}
+
 // MAIN PROGRAM
 moveButtons.id = "movement-controls";
 moveButtons.innerHTML = `
@@ -274,10 +305,15 @@ moveButtons.innerHTML = `
 `;
 app.append(moveButtons);
 
+updatePositionButton.id = "enable-geolocation";
+updatePositionButton.innerHTML = "🌐";
+moveButtons.append(updatePositionButton);
+
 document.getElementById("up")!.onclick = () => movePlayer("up");
 document.getElementById("down")!.onclick = () => movePlayer("down");
 document.getElementById("left")!.onclick = () => movePlayer("left");
 document.getElementById("right")!.onclick = () => movePlayer("right");
+document.getElementById("enable-geolocation")!.onclick = enableGeolocation;
 
 // App Title & Header
 document.title = appTitle;
